@@ -1,0 +1,4 @@
+APK bauen
+A) Android Studio: Ordner öffnen, Build > Build APK(s). Datei: app/build/outputs/apk/debug/app-debug.apk
+B) GitHub: Ordner als neues Repository hochladen, Reiter Actions > "APK bauen" > Artifact "AquariumPflege-apk" herunterladen.
+Installation: APK aufs Handy kopieren, "Unbekannte Apps installieren" erlauben, antippen.

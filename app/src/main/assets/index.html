@@ -1,0 +1,650 @@
+<title>Aquarium Pflege</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: breites Becken links, Pflege-Instrumente rechts, Logbuch darunter. Eine dunkle Welt: Zimmer bei Nacht, Becken als Lichtquelle. */
+:root{
+  --bg:#050f14; --panel:#0a1d25; --panel2:#0e2630; --line:#1a3844; --fg:#d8ecef; --mute:#7ea4ae;
+  --lamp:#ffb457; --aqua:#58d9c4; --good:#6fe08a; --warn:#ffc247; --bad:#ff6b5e;
+  --display:'Familjen Grotesk',system-ui,sans-serif; --mono:'JetBrains Mono',ui-monospace,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.45 var(--display);margin:0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px 40px}
+.app{max-width:1500px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+header{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;justify-content:space-between}
+h1{font-size:22px;margin:0;font-weight:700;letter-spacing:.01em}
+h1 small{display:block;font-size:11px;font-weight:500;color:var(--mute);letter-spacing:.14em;text-transform:uppercase}
+.stats{display:flex;flex-wrap:wrap;gap:8px 20px;font-family:var(--mono);font-size:13px}
+.stats b{color:var(--lamp);font-weight:600}
+.speed{display:flex;gap:4px}
+button{font:inherit;color:var(--fg);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer;min-height:34px}
+button:hover{border-color:var(--aqua)} button:focus-visible{outline:2px solid var(--lamp);outline-offset:2px}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.on{background:var(--aqua);color:#032;border-color:var(--aqua);font-weight:700}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:12px;align-items:start}
+.stage{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#000}
+canvas{display:block;width:100%;height:auto;cursor:crosshair}
+.alert{position:absolute;left:12px;right:12px;bottom:12px;padding:8px 12px;border-radius:6px;background:rgba(5,15,20,.82);border:1px solid var(--line);font-size:13px;backdrop-filter:blur(4px)}
+.alert.warn{border-color:var(--warn)} .alert.bad{border-color:var(--bad)} .alert.good{border-color:var(--good)}
+.side{display:flex;flex-direction:column;gap:12px;min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+.panel h2{margin:0 0 8px;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--mute);font-weight:500}
+.p{display:grid;grid-template-columns:130px 1fr 78px;gap:8px;align-items:center;padding:3px 0}
+.p span.l{font-size:12.5px} .p .v{font-family:var(--mono);font-size:12.5px;text-align:right;font-variant-numeric:tabular-nums}
+.bar{position:relative;height:8px;border-radius:4px;background:#2a1717;overflow:hidden}
+.bar i{position:absolute;top:0;bottom:0;background:#1d4a33}
+.bar em{position:absolute;top:-2px;bottom:-2px;width:3px;background:#fff;border-radius:2px;box-shadow:0 0 6px #fff}
+.acts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.acts .full{grid-column:1/-1}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.row label{font-size:12.5px;color:var(--mute)}
+.hint{font-size:11.5px;color:var(--mute);margin:6px 0 0}
+.fl{display:flex;flex-direction:column;gap:5px;max-height:240px;overflow:auto}
+.f{display:grid;grid-template-columns:1fr 70px;gap:8px;align-items:center;padding:5px 7px;border:1px solid transparent;border-radius:6px;cursor:pointer;background:var(--panel2);font-size:12.5px}
+.f.sel{border-color:var(--lamp)} .f small{color:var(--mute)}
+.hb{height:6px;border-radius:3px;background:#2a1717;overflow:hidden}.hb i{display:block;height:100%}
+.card{font-size:12.5px;display:flex;flex-direction:column;gap:4px}
+.card .mini{display:grid;grid-template-columns:70px 1fr 36px;gap:6px;align-items:center}
+.card .mini span:last-child{font-family:var(--mono);text-align:right}
+.shop{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.shop button{text-align:left;display:flex;flex-direction:column;gap:1px}
+.shop small{color:var(--mute);font-size:11px}
+.log{max-height:200px;overflow:auto;font-family:var(--mono);font-size:12px;display:flex;flex-direction:column;gap:3px}
+.log div{color:var(--mute)} .log .bad{color:var(--bad)} .log .warn{color:var(--warn)} .log .good{color:var(--good)}
+@media(max-width:980px){.grid{grid-template-columns:minmax(0,1fr)} .p{grid-template-columns:110px 1fr 70px}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+
+<div class="app">
+<header>
+  <h1>Aquarium Pflege<small>120 Liter Gesellschaftsbecken</small></h1>
+  <div class="stats"><span id="sDay"></span><span>Geld <b id="sMoney"></b></span><span>Besatz <b id="sStock"></b></span><span>Wasser <b id="sQual"></b></span></div>
+  <div class="speed" id="speed">
+    <button data-s="0" title="Pause">Pause</button><button data-s="1" class="on">1×</button><button data-s="4">4×</button><button data-s="16">16×</button>
+  </div>
+</header>
+<div class="grid">
+  <div class="stage"><canvas id="c" width="1200" height="700"></canvas><div class="alert" id="alert"></div></div>
+  <aside class="side">
+    <div class="panel"><h2>Wasserwerte</h2><div id="params"></div></div>
+    <div class="panel"><h2>Pflege</h2>
+      <div class="acts">
+        <button id="aFeedS">Füttern wenig</button><button id="aFeedN">Füttern normal</button>
+        <button id="aWc10">Wasser 10 %</button><button id="aWc25">Wasser 25 %</button>
+        <button id="aWc50" class="full">Wasser 50 % wechseln</button>
+        <button id="aGlass">Scheibe putzen</button><button id="aVac">Mulm absaugen</button>
+        <button id="aFilter">Filter ausspülen</button><button id="aTrim">Pflanzen stutzen</button>
+        <button id="aMed">Heilmittel (12 €)</button><button id="aKH">KH-Puffer (4 €)</button>
+      </div>
+      <div class="row" style="margin-top:8px"><label><input type="checkbox" id="cCond" checked> Wasseraufbereiter (3 €)</label><label><input type="checkbox" id="cTemp" checked> Temperatur angleichen</label></div>
+      <p class="hint">Leitungswasser: 16 °C, KH 11, pH 7,6, Nitrat 10, Chlor 0,4 mg/L.</p>
+      <div class="row" style="margin-top:8px">
+        <label>Heizung</label><button id="hM">−</button><b id="hV" style="font-family:var(--mono)"></b><button id="hP">+</button>
+        <label style="margin-left:8px">Licht</label><button id="lM">−</button><b id="lV" style="font-family:var(--mono)"></b><button id="lP">+</button>
+      </div>
+      <div class="row" style="margin-top:8px"><button id="aAir" class="on">Luftpumpe an</button><button id="aFil" class="on">Filter an</button></div>
+    </div>
+    <div class="panel"><h2>Bewohner</h2><div class="fl" id="fl"></div><div class="card" id="card" style="margin-top:8px"></div></div>
+    <div class="panel"><h2>Zoohandlung</h2><div class="shop" id="shop"></div></div>
+  </aside>
+</div>
+<div class="panel"><h2>Logbuch</h2><div class="log" id="log"></div> <div class="row" style="margin-top:10px"><button id="aNew">Neues Aquarium starten</button></div></div>
+</div>
+
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const fmt=(v,d=1)=>v.toFixed(d).replace('.',',');
+function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const W=1200,H=700,L0=34,R0=1166,WS=82,PX=11;
+const sandTop=x=>592+10*Math.sin(x*.011+1)+6*Math.sin(x*.037)-(x<260?(260-x)*.05:0);
+
+const SP={
+ neon:{n:'Neonsalmler',lat:'Paracheirodon innesi',max:3.5,t:[22,26],ph:[5.5,7.2],school:6,zone:[.3,.75],price:3,spd:60,hr:4.2,sat:9,hh:.30,desc:'Schwarmfisch ab 6 Tieren. Mag weiches, leicht saures Wasser, reagiert empfindlich auf Nitrit.'},
+ guppy:{n:'Guppy',lat:'Poecilia reticulata',max:5,t:[22,28],ph:[6.8,8.0],school:3,zone:[.12,.6],price:4,spd:55,hr:4.4,sat:10,hh:.34,desc:'Robust, bevorzugt härteres Wasser. Männchen mit Schleierschwanz.'},
+ cory:{n:'Panzerwels',lat:'Corydoras aeneus',max:6,t:[22,27],ph:[6.0,7.8],school:5,zone:[.95,1],price:6,spd:38,hr:3.8,sat:14,hh:.30,desc:'Bodenbewohner im Schwarm. Braucht sauberen Sand, sonst entzünden sich die Barteln.'},
+ gourami:{n:'Blauer Fadenfisch',lat:'Trichopodus trichopterus',max:10,t:[22,28],ph:[6.0,8.0],school:1,zone:[.1,.45],price:9,spd:42,hr:3.6,sat:16,hh:.34,labyrinth:true,desc:'Ruhiger Labyrinthfisch, atmet Luft an der Oberfläche und verträgt etwas weniger Sauerstoff.'},
+ angel:{n:'Skalar',lat:'Pterophyllum scalare',max:12,t:[24,28],ph:[6.0,7.2],school:1,zone:[.2,.65],price:18,spd:40,hr:3.4,sat:20,hh:.50,pred:true,desc:'Majestätisch, aber ein Jäger: frisst Fische unter 40 % seiner Länge. Nitratempfindlich.'}
+};
+const PARAMS=[
+ {k:'temp',l:'Temperatur',u:'°C',a:15,b:35,ok:[22,28],id:[24,26],d:1},
+ {k:'pH',l:'pH-Wert',u:'',a:5,b:9,ok:[6.2,7.6],id:[6.6,7.3],d:2},
+ {k:'KH',l:'Karbonathärte',u:'°dH',a:0,b:15,ok:[3,12],id:[4,9],d:1},
+ {k:'TAN',l:'Ammonium NH₄⁺',u:'mg/L',a:0,b:2,ok:[0,.5],id:[0,.15],d:2},
+ {k:'NH3',l:'Ammoniak NH₃',u:'mg/L',a:0,b:.1,ok:[0,.02],id:[0,.005],d:3},
+ {k:'NO2',l:'Nitrit NO₂⁻',u:'mg/L',a:0,b:2,ok:[0,.3],id:[0,.1],d:2},
+ {k:'NO3',l:'Nitrat NO₃⁻',u:'mg/L',a:0,b:120,ok:[0,50],id:[0,25],d:0},
+ {k:'O2',l:'Sauerstoff',u:'mg/L',a:0,b:11,ok:[5.5,11],id:[7,11],d:1},
+ {k:'cl',l:'Chlor',u:'mg/L',a:0,b:.5,ok:[0,.02],id:[0,.01],d:2}
+];
+
+let S;
+const KEY='aquarium-v1';
+function newGame(){
+  S={t:9,speed:1,money:80,day:0,w:{temp:25,pH:7.0,KH:7,TAN:.03,NO2:.01,NO3:8,O2:8,cl:0},
+    setT:25,lightH:9,air:true,filter:true,heating:false,b1:.7,b2:.7,clog:.15,algae:.08,glass:.06,plant:.85,mulm:.15,
+    med:0,shock:0,food:[],fish:[],log:[],sel:null,uid:1,warned:{},over:false,lamp:1};
+  for(let i=0;i<6;i++)addFish('neon',true);
+  for(let i=0;i<4;i++)addFish('cory',true);
+  addFish('gourami',true);
+  logm('Neues Becken gestartet. Die Bakterien im Filter sind eingefahren. Füttere sparsam und beobachte die Werte.','good');
+}
+function addFish(sp,start){
+  const s=SP[sp],len=s.max*(start?rngf(.7,.95):.6);
+  const zy=lerp(WS+30,sandTop(600)-10,rngf(s.zone[0],s.zone[1]));
+  S.fish.push({id:S.uid++,sp,x:rngf(150,1050),y:zy,vx:0,vy:0,dir:Math.random()<.5?1:-1,len,max:s.max,health:100,stress:start?5:28,hunger:rngf(10,40),
+    ich:0,rot:0,dead:false,ph:Math.random()*6,tx:0,ty:0,tt:0,hue:Math.floor(rngf(0,360)),issues:[],age:rngf(30,200),dots:[...Array(14)].map(()=>[Math.random(),Math.random()])});
+  if(!start&&Math.random()<.07){S.fish[S.fish.length-1].ich=.05}
+}
+function rngf(a,b){return a+Math.random()*(b-a)}
+function logm(m,type=''){S.log.unshift({t:S.t,m,type});if(S.log.length>60)S.log.pop()}
+function stamp(t){const d=Math.floor(t/24)+1,h=Math.floor(t%24),mi=Math.floor((t%1)*60);return`T${d} ${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')}`}
+
+/* ---------- Chemie ---------- */
+function nh3free(){const w=S.w,T=w.temp+273.15,pKa=.09018+2729.92/T;return w.TAN/(1+Math.pow(10,pKa-w.pH))}
+const o2sat=T=>14.6-.4*T+.0059*T*T;
+const fm=f=>.016*Math.pow(f.len,3);
+function alive(){return S.fish.filter(f=>!f.dead)}
+function step(h){
+  const w=S.w,V=120,hour=S.t%24,lightOn=hour>=8&&hour<8+S.lightH;
+  const al=alive(),mass=al.reduce((a,f)=>a+fm(f),0);
+  const dead=S.fish.filter(f=>f.dead);
+  // Temperatur
+  const room=20.5+2.2*Math.sin((S.t-15)/24*Math.PI*2);
+  w.temp+=(room-w.temp)*.016*h+(lightOn?.03:0)*h;
+  if(w.temp<S.setT-.3)S.heating=true;else if(w.temp>S.setT+.1)S.heating=false;
+  if(S.heating)w.temp+=.55*h;
+  S.shock=Math.max(0,S.shock-.12*h);
+  // Eintraege Stickstoff
+  const sunk=S.food.filter(p=>p.sunk).length;
+  let nIn=(mass*.9/24+dead.reduce((a,f)=>a+fm(f)*5,0)+sunk*1.1+S.mulm*.5)*h/V;
+  w.TAN+=nIn;
+  S.mulm+=(mass*.0016+sunk*.0007)*h; S.mulm-=S.mulm*.004*h; S.mulm=clamp(S.mulm,0,2);
+  S.clog=clamp(S.clog+(.0006+mass*.00001)*h,0,1);
+  const flow=S.filter?(1-S.clog*.7):0;
+  // Bakterien
+  const cap=(S.filter?1.6:.5)*(1-.4*S.clog);
+  const tf=clamp((w.temp-10)/15,.1,1.2),ox=clamp(w.O2/5,.1,1),pf=clamp((w.pH-5.5)/1.3,.1,1),mf=1-.5*clamp(S.med,0,1);
+  const fl=S.filter?1:.35;
+  const r1=Math.min(w.TAN,.09*S.b1*(w.TAN/(w.TAN+.25))*tf*ox*pf*mf*fl*h);
+  w.TAN-=r1;w.NO2+=r1;
+  const r2=Math.min(w.NO2,.1*S.b2*(w.NO2/(w.NO2+.3))*tf*ox*pf*mf*fl*h);
+  w.NO2-=r2;w.NO3+=r2;
+  S.b1+=S.b1*h*(.014*(w.TAN/(w.TAN+.2))*(1-S.b1/cap))-S.b1*.0015*h;
+  S.b2+=S.b2*h*(.011*(w.NO2/(w.NO2+.2))*(1-S.b2/cap))-S.b2*.0015*h;
+  if(!S.filter){S.b1*=Math.exp(-.02*h);S.b2*=Math.exp(-.02*h)}
+  if(w.cl>.03){const k=Math.exp(-.5*w.cl*h);S.b1*=k;S.b2*=k}
+  S.b1=clamp(S.b1,.01,2);S.b2=clamp(S.b2,.01,2);
+  // Pflanzen & Algen
+  const up=Math.min(w.NO3,.02*S.plant*h*(lightOn?1:.3));w.NO3-=up;
+  const upn=Math.min(w.TAN,.008*S.plant*h*(lightOn?1:.3));w.TAN-=upn;
+  S.plant=clamp(S.plant+(lightOn&&w.NO3>1?.0008:-.00005)*h*(1-S.plant/2),.1,2);
+  const ar=(lightOn?.0025*(.3+w.NO3/40)*(.6+S.lightH/10)*clamp(1.3-.5*S.plant,.3,1.2):.0004)*h;
+  S.algae=clamp(S.algae+ar-.0004*h,0,1);S.glass=clamp(S.glass+ar*.9-.0003*h,0,1);
+  // Sauerstoff
+  const sat=o2sat(w.temp),k=.08+(S.air?.18:0)+(S.filter?.06*(1-S.clog):0);
+  let cons=mass*.35/V+(r1*3.4+r2*1.1)/h*0+S.mulm*.02+S.algae*(lightOn?0:.04)+S.plant*(lightOn?0:.03);
+  const bacCons=(r1*3.4+r2*1.1)/Math.max(h,1e-6);
+  const prod=lightOn?S.plant*.1+S.algae*.04:0;
+  w.O2+=((sat-w.O2)*k-cons-bacCons*.35+prod)*h;
+  w.O2=clamp(w.O2,0,sat*1.25);
+  // KH / pH
+  w.KH=Math.max(0,w.KH-.4*r1-.02*up);
+  const pHeq=6.1+1.1*Math.log10(w.KH+.3)+(lightOn?.1*S.plant:-.08)-w.NO3/400;
+  w.pH+=(pHeq-w.pH)*.08*h;
+  w.cl-=w.cl*.35*h;if(w.cl<.001)w.cl=0;
+  S.med*=Math.exp(-.03*h);
+  // Futter
+  S.food.forEach(p=>{if(p.sunk)p.age+=h});
+  S.food=S.food.filter(p=>{if(p.sunk&&p.age>7){S.mulm+=.01;return false}return true});
+  // Fische
+  al.forEach(f=>fishStep(f,h,al,lightOn));
+  S.fish.forEach(f=>{if(f.dead&&S.t-f.dt>60){f.gone=true}});
+  S.fish=S.fish.filter(f=>!f.gone);
+  S.t+=h;
+}
+function nbrs(f,al){return al.filter(g=>g!==f&&g.sp===f.sp).length}
+function fishStep(f,h,al,lightOn){
+  const sp=SP[f.sp],w=S.w,iss=[];let d=0;
+  const nh3=nh3free();
+  if(nh3>.02){d+=clamp((nh3-.02)/.05,0,1.6)*7;iss.push(`Ammoniak ${fmt(nh3,3)} mg/L`)}
+  const n2=sp.n==='Neonsalmler'?.6:.5;
+  if(w.NO2>n2){d+=clamp((w.NO2-n2)/2,0,1.6)*5;iss.push(`Nitrit ${fmt(w.NO2,2)} mg/L`)}
+  const n3=f.sp==='angel'?30:60;
+  if(w.NO3>n3){d+=clamp((w.NO3-n3)/80,0,1.5)*2.2;iss.push(`Nitrat ${fmt(w.NO3,0)} mg/L`)}
+  const o2min=sp.labyrinth?3:5;
+  if(w.O2<o2min){d+=clamp((o2min-w.O2)/3,0,1.5)*8;iss.push(`Sauerstoff ${fmt(w.O2,1)} mg/L`)}
+  const dt=w.temp<sp.t[0]?sp.t[0]-w.temp:w.temp>sp.t[1]?w.temp-sp.t[1]:0;
+  if(dt>0){d+=clamp(dt/4,0,1.5)*5;iss.push(`Temperatur ${fmt(w.temp,1)} °C`)}
+  const dp=w.pH<sp.ph[0]?sp.ph[0]-w.pH:w.pH>sp.ph[1]?w.pH-sp.ph[1]:0;
+  if(dp>.1){d+=clamp(dp/1.5,0,1.5)*4;iss.push(`pH ${fmt(w.pH,2)}`)}
+  if(f.sp==='neon'&&w.KH>9){d+=.8;iss.push('Wasser zu hart')}
+  if(w.cl>.02){d+=clamp(w.cl/.2,0,1.5)*10;iss.push('Chlor im Wasser')}
+  if(S.shock>2){d+=clamp((S.shock-2)/3,0,1.2)*3;iss.push('Temperaturschock')}
+  if(f.hunger>85){d+=(f.hunger-85)/15*3;iss.push('Verhungert')}
+  if(S.med>.5&&f.sp==='cory'){d+=.5;iss.push('Medikament')}
+  if(f.ich>0){d+=f.ich*3.5;iss.push('Weißpünktchen')}
+  if(f.rot>0){d+=f.rot*3;iss.push('Flossenfäule')}
+  const alone=sp.school>1&&nbrs(f,al)+1<Math.min(sp.school,3);
+  const crowd=al.reduce((a,g)=>a+g.len,0)>130;
+  if(alone)iss.push('Einsam im Schwarm');
+  if(crowd)iss.push('Überbesatz');
+  f.issues=iss;
+  const target=clamp(d*14+(alone?18:0)+(crowd?14:0),0,100);
+  f.stress+=(target-f.stress)*.1*h;
+  f.health-=d*h+(f.stress>60?.3*h:0);
+  if(d<.3&&f.hunger<75)f.health=Math.min(100,f.health+1.0*h);
+  f.hunger=Math.min(100,f.hunger+sp.hr*h*(lightOn?1:.5));
+  // Wachstum
+  if(f.health>60&&f.hunger<55&&f.len<f.max)f.len=Math.min(f.max,f.len+f.max*.00022*h);
+  f.age+=h/24;
+  // Krankheiten
+  const sick=al.some(g=>g!==f&&g.ich>.1);
+  if(f.ich===0&&Math.random()<((f.stress>40?.01:.0005)+(sick?.012:0)+(S.shock>3?.01:0))*h){f.ich=.05;logm(`${sp.n} zeigt weiße Pünktchen (Ichthyo). Heilmittel dosieren, Temperatur auf 30 °C anheben.`,'bad')}
+  if(f.ich>0){
+    if(S.med>.1)f.ich=Math.max(0,f.ich-.06*S.med*(S.setT>=29?2:1)*h);
+    else f.ich=Math.min(1,f.ich+.012*h);
+    if(f.ich<.01)f.ich=0;
+  }
+  const dirty=S.mulm>.8||w.NO3>70;
+  if(f.rot===0&&dirty&&Math.random()<(f.sp==='cory'?.012:.004)*h){f.rot=.05;logm(`${sp.n} bekommt Flossenfäule durch schmutziges Wasser.`,'bad')}
+  if(f.rot>0){
+    if(S.med>.1)f.rot=Math.max(0,f.rot-.05*S.med*h);
+    else if(dirty)f.rot=Math.min(1,f.rot+.01*h);else f.rot=Math.max(0,f.rot-.006*h);
+    if(f.rot<.01)f.rot=0;
+  }
+  if(f.health<=0&&!f.dead){f.dead=true;f.health=0;f.dt=S.t;logm(`${sp.n} ist gestorben. ${iss[0]?'Ursache: '+iss[0]+'.':''} Entferne den Fisch per Klick mit dem Kescher.`,'bad')}
+}
+/* ---------- Spielzeit ---------- */
+function dailyTick(){
+  const d=Math.floor(S.t/24);
+  if(d>S.day){S.day=d;let inc=0;alive().forEach(f=>{if(f.health>60)inc+=SP[f.sp].price*.12*f.health/100});
+    S.money+=inc;logm(`Tag ${d+1}: Einnahmen ${fmt(inc,2)} €. Gesunde Fische bringen Geld.`,'good')}
+}
+function warnings(){
+  const w=S.w,nh3=nh3free(),chk=(key,cond,msg,type)=>{if(cond){if(S.t-(S.warned[key]??-99)>18){S.warned[key]=S.t;logm(msg,type)}}};
+  chk('nh3',nh3>.02,`Giftiges Ammoniak: ${fmt(nh3,3)} mg/L. Wasserwechsel, nicht füttern, pH nicht anheben.`,'bad');
+  chk('no2',w.NO2>.5,`Nitrit ${fmt(w.NO2,2)} mg/L. Wasser wechseln, Bakterien brauchen Zeit.`,'bad');
+  chk('no3',w.NO3>50,`Nitrat ${fmt(w.NO3,0)} mg/L. Teilwasserwechsel nötig.`,'warn');
+  chk('o2',w.O2<5.5,`Wenig Sauerstoff: ${fmt(w.O2,1)} mg/L. Luftpumpe an, Temperatur senken.`,'warn');
+  chk('algae',S.glass>.6,'Die Scheibe ist stark veralgt.','warn');
+  chk('mulm',S.mulm>.9,'Viel Mulm am Boden. Absaugen.','warn');
+  chk('clog',S.clog>.8,'Der Filter ist zugesetzt und fördert kaum noch.','warn');
+}
+/* ---------- Fischverhalten ---------- */
+function floorY(x){return sandTop(x)}
+function fishMove(f,rdt,al){
+  const sp=SP[f.sp];
+  if(f.dead){f.vy=-14;f.y=Math.max(WS+6,f.y-14*rdt);f.vx*=.95;return}
+  const sick=f.health<45||f.ich>.5;
+  let sp0=sp.spd*(sick?.45:1)*(S.w.temp<20?.7:1);
+  f.tt-=rdt;
+  // Futter
+  let tgt=null;
+  if(f.hunger>28){
+    let best=1e9;
+    S.food.forEach(p=>{
+      if(f.sp==='cory'&&!p.sunk&&p.y<floorY(p.x)-80)return;
+      const dd=Math.hypot(p.x-f.x,p.y-f.y);if(dd<best){best=dd;tgt=p}
+    });
+    if(tgt&&best<14){S.food.splice(S.food.indexOf(tgt),1);f.hunger=Math.max(0,f.hunger-SP[f.sp].sat*(f.len/f.max*.6+.4));S.w.TAN+=3/120;S.mulm+=.004;tgt=null;f.tt=0}
+    else if(tgt){f.tx=tgt.x;f.ty=tgt.y;f.tt=1;sp0*=1.5}
+  }
+  // Jagd
+  if(!tgt&&sp.pred&&f.hunger>45){
+    const prey=al.filter(g=>g!==f&&g.len<f.len*.4);
+    let b=1e9,pr=null;prey.forEach(g=>{const dd=Math.hypot(g.x-f.x,g.y-f.y);if(dd<b){b=dd;pr=g}});
+    if(pr){f.tx=pr.x;f.ty=pr.y;f.tt=1;sp0*=2.2;
+      if(b<26){pr.health=0;pr.dead=true;pr.dt=S.t;f.hunger=Math.max(0,f.hunger-40);logm(`Der Skalar hat einen ${SP[pr.sp].n} gefressen.`,'bad')}}
+  }
+  if(f.tt<=0){
+    const z=sp.zone,y0=WS+28,fy=floorY(f.x)-14;
+    let cx=0,cy=0,n=0;
+    if(sp.school>1){al.forEach(g=>{if(g!==f&&g.sp===f.sp){cx+=g.x;cy+=g.y;n++}})}
+    if(n&&Math.random()<.75){f.tx=cx/n+rngf(-70,70);f.ty=cy/n+rngf(-40,40)}
+    else{f.tx=rngf(L0+60,R0-60);f.ty=lerp(y0,fy,rngf(z[0],z[1]))}
+    if(f.sp==='gourami'&&Math.random()<.04)f.ty=WS+16;
+    f.tt=rngf(1.2,4.5)*(sick?2:1);
+  }
+  f.tx=clamp(f.tx,L0+40,R0-40);
+  const fy=floorY(f.tx)-(f.sp==='cory'?9:20);
+  f.ty=clamp(f.ty,WS+20,fy);
+  const dx=f.tx-f.x,dy=f.ty-f.y,dd=Math.hypot(dx,dy)+.001;
+  const tv=dd<20?.3:1;
+  f.vx+=(dx/dd*sp0*tv-f.vx)*Math.min(1,rdt*2.2);
+  f.vy+=(dy/dd*sp0*tv*.7-f.vy)*Math.min(1,rdt*2.2);
+  // Separation
+  al.forEach(g=>{if(g!==f){const ax=f.x-g.x,ay=f.y-g.y,r=Math.hypot(ax,ay);if(r<f.len*PX*.9&&r>.1){f.vx+=ax/r*20*rdt;f.vy+=ay/r*20*rdt}}});
+  f.x=clamp(f.x+f.vx*rdt,L0+20,R0-20);f.y=clamp(f.y+f.vy*rdt,WS+14,floorY(f.x)-(f.sp==='cory'?6:14));
+  if(Math.abs(f.vx)>6)f.dir=f.vx>0?1:-1;
+  f.ph+=rdt*(3+Math.hypot(f.vx,f.vy)*.12);
+}
+/* ---------- Dekor ---------- */
+const R=rng(7);
+const plants=[];
+[[70,'vallis',1],[110,'vallis',1],[150,'vallis',.9],[190,'vallis',.8],[330,'sword',1],[395,'sword',.8],[990,'cabomba',1],[1050,'cabomba',.9],[1105,'vallis',1.1],[1140,'vallis',1],[610,'sword',.7],[560,'vallis',.6]]
+ .forEach(([x,t,s])=>plants.push({x,type:t,s,ph:R()*6,front:R()<.4}));
+const rocks=[{x:250,w:190,h:130,seed:3},{x:880,w:150,h:90,seed:9},{x:760,w:90,h:60,seed:12}];
+rocks.forEach(r=>{r.pts=[];const rr=rng(r.seed);for(let i=0;i<=9;i++){const a=Math.PI*i/9;r.pts.push([Math.cos(a)*r.w/2*(.8+rr()*.3),-Math.sin(a)*r.h*(.75+rr()*.35)])}});
+const spots=[...Array(60)].map(()=>({x:R()*1100+50,y:R()*40,r:2+R()*4,c:R()}));
+const motes=[...Array(70)].map(()=>({x:R()*W,y:WS+R()*500,s:.3+R()*.8,p:R()*6}));
+const glassSpots=[...Array(45)].map(()=>({x:R()<.5?L0+R()*160:R0-R()*160,y:200+R()*430,r:3+R()*9}));
+let bubbles=[];
+
+/* ---------- Rendering ---------- */
+const cv=$('c'),ctx=cv.getContext('2d');
+let T=0;
+function leaf(x,y,len,w,bend,c1,c2){
+  const g=ctx.createLinearGradient(x,y,x,y-len);g.addColorStop(0,c1);g.addColorStop(1,c2);
+  ctx.fillStyle=g;ctx.beginPath();ctx.moveTo(x-w/2,y);
+  ctx.quadraticCurveTo(x-w/2+bend*.5,y-len*.5,x+bend,y-len);
+  ctx.quadraticCurveTo(x+w/2+bend*.5,y-len*.5,x+w/2,y);ctx.fill();
+}
+function drawPlant(p){
+  const by=sandTop(p.x)+6,m=.5+.6*S.plant,t=T;
+  if(p.type==='vallis'){
+    for(let i=0;i<9;i++){const len=(190+i*14%80)*p.s*m,sw=Math.sin(t*.9+p.ph+i)*14*(len/200),base=p.x+(i-4)*5;
+      leaf(base,by,len,5.5,sw+(i-4)*7,'#143d1c','#6fcf56');}
+  }else if(p.type==='sword'){
+    for(let i=0;i<9;i++){const a=(i-4)/4,len=(150+(i*37%60))*p.s*m,sw=Math.sin(t*.7+p.ph+i)*8;
+      leaf(p.x+a*4,by,len*(1-Math.abs(a)*.25),24*p.s,a*85+sw,'#1a4a1f','#7bd25a');}
+  }else{
+    for(let s=0;s<4;s++){const bx=p.x+(s-1.5)*14,hh=(240+s*20)*p.s*m;
+      ctx.strokeStyle='#2c7a2c';ctx.lineWidth=2;ctx.beginPath();
+      for(let j=0;j<=24;j++){const y=by-hh*j/24,x=bx+Math.sin(t*.8+p.ph+j*.25+s)*10*j/24;j?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.stroke();
+      for(let j=2;j<=24;j++){const y=by-hh*j/24,x=bx+Math.sin(t*.8+p.ph+j*.25+s)*10*j/24,fl=26*(1-j/30);
+        ctx.strokeStyle=j%2?'#4cae48':'#3b9a3c';ctx.lineWidth=1;
+        for(let k=-3;k<=3;k++){ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+k*fl/3,y-fl*.55+Math.abs(k)*3);ctx.stroke()}}}
+  }
+}
+function drawRock(r){
+  const bx=r.x,by=sandTop(r.x)+10;
+  ctx.beginPath();r.pts.forEach(([x,y],i)=>i?ctx.lineTo(bx+x,by+y):ctx.moveTo(bx+x,by+y));ctx.closePath();
+  const g=ctx.createLinearGradient(bx-r.w/2,by-r.h,bx+r.w/2,by);g.addColorStop(0,'#6c7478');g.addColorStop(.5,'#444c50');g.addColorStop(1,'#22282b');
+  ctx.fillStyle=g;ctx.fill();
+  ctx.save();ctx.clip();ctx.strokeStyle='rgba(255,255,255,.07)';ctx.lineWidth=1;
+  for(let i=0;i<14;i++){ctx.beginPath();ctx.moveTo(bx-r.w/2+i*r.w/13,by-r.h);ctx.lineTo(bx-r.w/2+i*r.w/13-20,by);ctx.stroke()}
+  ctx.fillStyle=`rgba(60,130,50,${.08+S.algae*.45})`;ctx.fillRect(bx-r.w,by-r.h,r.w*2,r.h*.8);ctx.restore();
+}
+function drawWood(){
+  ctx.lineCap='round';
+  const paths=[[[660,600],[690,520],[760,470],[830,440]],[[700,520],[650,470],[610,455],[560,400]]];
+  paths.forEach((pts,i)=>{
+    for(let k=0;k<3;k++){ctx.strokeStyle=['#2a1a0f','#4a3220','#6a4c33'][k];ctx.lineWidth=[34,26,8][k]*(i?.7:1);
+      ctx.beginPath();ctx.moveTo(pts[0][0]-k*2,pts[0][1]);ctx.bezierCurveTo(pts[1][0]-k*2,pts[1][1],pts[2][0]-k*2,pts[2][1],pts[3][0]-k*2,pts[3][1]);ctx.stroke()}
+  });
+  ctx.fillStyle=`rgba(80,150,60,${.05+S.algae*.4})`;
+  ctx.strokeStyle=`rgba(80,150,60,${.05+S.algae*.35})`;ctx.lineWidth=12;
+  ctx.beginPath();ctx.moveTo(690,520);ctx.bezierCurveTo(710,500,740,475,770,462);ctx.stroke();
+}
+function body(L,h,hump){ctx.beginPath();ctx.moveTo(L/2,0);
+  ctx.bezierCurveTo(L*.32,-h*.75,-L*.08,-h*(.6+hump),-L*.5,-h*.1);ctx.lineTo(-L*.5,h*.1);
+  ctx.bezierCurveTo(-L*.12,h*.62,L*.3,h*.7,L/2,0);ctx.closePath()}
+function drawFish(f){
+  const sp=SP[f.sp],L=f.len*PX,t=T;
+  ctx.save();ctx.translate(f.x,f.y);
+  if(f.dead){ctx.scale(f.dir,-1);ctx.rotate(.15)}
+  else{ctx.scale(f.dir,1);ctx.rotate(Math.atan2(f.vy,Math.abs(f.vx)+25)*.8)}
+  const sk=f.health<50||f.stress>65,wag=f.dead?0:Math.sin(f.ph)*(.3+Math.min(.4,Math.hypot(f.vx,f.vy)/90)),
+    fin=f.dead?.3:(sk?.55:1),gray=f.dead?.6:clamp((60-f.health)/80,0,.5);
+  let H=L*.3,hump=.05;
+  const tail=(len,spread,col1,col2)=>{ctx.save();ctx.translate(-L*.48,0);ctx.rotate(wag);
+    const g=ctx.createLinearGradient(0,0,-len,0);g.addColorStop(0,col1);g.addColorStop(1,col2);ctx.fillStyle=g;
+    ctx.beginPath();ctx.moveTo(0,0);ctx.bezierCurveTo(-len*.4,-spread*fin,-len,-spread*1.1*fin,-len*.92,-spread*.2);
+    ctx.lineTo(-len*.8,0);ctx.lineTo(-len*.92,spread*.2);ctx.bezierCurveTo(-len,spread*1.1*fin,-len*.4,spread*fin,0,0);ctx.fill();
+    if(f.rot>0){ctx.fillStyle=`rgba(220,230,230,${f.rot*.5})`;ctx.fillRect(-len,-spread,len*.3,spread*2)}ctx.restore()};
+  const fn=(pts,col)=>{ctx.fillStyle=col;ctx.beginPath();pts.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.fill()};
+  const fillBody=(c1,c2,c3)=>{body(L,H,hump);const g=ctx.createLinearGradient(0,-H*.7,0,H*.7);g.addColorStop(0,c1);g.addColorStop(.5,c2);g.addColorStop(1,c3);ctx.fillStyle=g;ctx.fill()};
+  const wob=Math.sin(f.ph*.5)*.1;
+  if(f.sp==='neon'){
+    H=L*.28;tail(L*.28,L*.12,'rgba(210,210,210,.5)','rgba(200,200,210,.15)');
+    fn([[-L*.05,-H*.5],[L*.05,-H*.8],[-L*.15,-H*.45]],'rgba(200,200,200,.4)');
+    fillBody('#26405a','#7aa6bb','#d9e2e6');
+    ctx.save();body(L,H,hump);ctx.clip();
+    ctx.fillStyle='#e0261e';ctx.beginPath();ctx.moveTo(L*.1,H*.02);ctx.lineTo(-L*.55,H*.02);ctx.lineTo(-L*.55,H);ctx.lineTo(L*.1,H);ctx.closePath();ctx.fill();
+    const sg=ctx.createLinearGradient(L*.4,0,-L*.5,0);sg.addColorStop(0,'#38e6ff');sg.addColorStop(.6,'#2a7bff');sg.addColorStop(1,'#6a4cff');
+    ctx.fillStyle=sg;ctx.shadowColor='#38e6ff';ctx.shadowBlur=8;ctx.fillRect(-L*.5,-H*.2,L*.95,H*.2);ctx.restore();
+  }else if(f.sp==='guppy'){
+    H=L*.28;const c1=`hsl(${f.hue},85%,55%)`,c2=`hsl(${(f.hue+50)%360},90%,45%)`;
+    tail(L*.75,L*.38,c1,c2);
+    fn([[-L*.1,-H*.5],[-L*.3,-H*1.25],[-L*.4,-H*.2]],`hsla(${f.hue},80%,55%,.7)`);
+    fillBody('#7e8a7a','#b9c2b0','#eef0e4');
+    ctx.save();body(L,H,hump);ctx.clip();ctx.fillStyle=`hsla(${f.hue},90%,55%,.45)`;ctx.fillRect(-L*.5,-H,L*.5,H*2);ctx.restore();
+  }else if(f.sp==='cory'){
+    H=L*.38;hump=.1;tail(L*.3,L*.16,'rgba(150,130,90,.7)','rgba(170,150,110,.3)');
+    fn([[-L*.02,-H*.55],[-L*.2,-H*1.15],[-L*.3,-H*.4]],'rgba(130,115,80,.85)');
+    fillBody('#6b5a3a','#a98f58','#d9c79a');
+    ctx.save();body(L,H,hump);ctx.clip();ctx.strokeStyle='rgba(40,70,40,.55)';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(L*.3,-H*.1);ctx.lineTo(-L*.45,-H*.05);ctx.stroke();
+    ctx.strokeStyle='rgba(255,230,160,.4)';ctx.lineWidth=1;for(let i=0;i<7;i++){ctx.beginPath();ctx.moveTo(L*.25-i*L*.1,-H*.5);ctx.lineTo(L*.25-i*L*.1,H*.5);ctx.stroke()}ctx.restore();
+    ctx.strokeStyle='#d8c9a0';ctx.lineWidth=1.2;for(const o of[-1,1]){ctx.beginPath();ctx.moveTo(L*.48,H*.1);ctx.quadraticCurveTo(L*.58,H*.3*o+H*.2,L*.5,H*.4+o*3);ctx.stroke()}
+  }else if(f.sp==='gourami'){
+    H=L*.36;hump=.08;tail(L*.35,L*.2,'rgba(70,110,190,.75)','rgba(110,150,210,.25)');
+    fn([[L*.1,-H*.55],[-L*.25,-H*.95],[-L*.4,-H*.15]],'rgba(70,110,190,.7)');fn([[L*.05,H*.5],[-L*.32,H*.9],[-L*.4,H*.1]],'rgba(70,110,190,.7)');
+    ctx.strokeStyle='#cfe4ff';ctx.lineWidth=1.6;ctx.beginPath();ctx.moveTo(L*.28,H*.45);ctx.bezierCurveTo(L*.2,H*1.1,-L*.1,H*1.5+wob*L,-L*.3,H*1.7+wob*L);ctx.stroke();
+    fillBody('#3b5aa6','#6f8fcf','#c6d4ea');
+    ctx.save();body(L,H,hump);ctx.clip();ctx.fillStyle='rgba(20,30,70,.45)';ctx.beginPath();ctx.ellipse(L*.02,-H*.02,L*.08,H*.15,0,0,7);ctx.fill();ctx.beginPath();ctx.ellipse(-L*.43,0,L*.06,H*.15,0,0,7);ctx.fill();
+    ctx.fillStyle='rgba(20,30,80,.2)';for(let i=0;i<8;i++){ctx.beginPath();ctx.ellipse(L*(.3-i*.1),H*(i%2?.22:-.25),L*.04,H*.1,0,0,7);ctx.fill()}ctx.restore();
+  }else{
+    H=L*.62;hump=.18;tail(L*.4,L*.34,'rgba(220,220,230,.55)','rgba(230,230,240,.1)');
+    fn([[L*.0,-H*.45],[-L*.15,-H*1.5*fin-L*.1],[-L*.42,-H*.15]],'rgba(215,215,225,.55)');
+    fn([[L*.0,H*.45],[-L*.15,H*1.5*fin+L*.1],[-L*.42,H*.15]],'rgba(215,215,225,.55)');
+    ctx.strokeStyle='rgba(235,235,245,.7)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(L*.2,H*.4);ctx.bezierCurveTo(L*.15,H*1.1,L*.05,H*1.6*fin,L*.0,H*1.9*fin);ctx.stroke();
+    fillBody('#90959b','#d4d9dc','#f2f2ee');
+    ctx.save();body(L,H,hump);ctx.clip();ctx.fillStyle='rgba(15,18,20,.78)';
+    [.34,.0,-.3].forEach((x,i)=>{ctx.beginPath();ctx.moveTo(L*x-L*.04,-H);ctx.lineTo(L*x+L*.05,-H);ctx.lineTo(L*x+L*.035,H);ctx.lineTo(L*x-L*.06,H);ctx.fill()});
+    ctx.fillStyle='rgba(255,150,40,.25)';ctx.fillRect(L*.3,-H*.5,L*.2,H*.4);ctx.restore();
+  }
+  // Glanz und Verblassen
+  ctx.save();body(L,H,hump);ctx.clip();
+  const hg=ctx.createLinearGradient(0,-H*.7,0,H*.1);hg.addColorStop(0,'rgba(255,255,255,.35)');hg.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=hg;ctx.fillRect(-L,-H,L*2,H*1.2);
+  if(gray>0){ctx.fillStyle=`rgba(120,120,120,${gray})`;ctx.fillRect(-L,-H,L*2,H*2)}
+  if(f.ich>0){ctx.fillStyle='#fff';const n=Math.floor(3+f.ich*11);for(let i=0;i<n;i++){const [a,b]=f.dots[i];ctx.beginPath();ctx.arc(-L*.45+a*L*.85,-H*.5+b*H,1+(i%2)*.6,0,7);ctx.fill()}}
+  ctx.restore();
+  // Kiemen und Auge
+  ctx.strokeStyle='rgba(0,0,0,.25)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(L*.22,0,H*.4,-1,1);ctx.stroke();
+  const ex=L*(f.sp==='cory'?.34:.33),er=Math.max(2.2,H*(f.sp==='angel'?.12:.17));
+  ctx.fillStyle=f.dead?'#9aa':'#f1ede0';ctx.beginPath();ctx.arc(ex,-H*.1,er,0,7);ctx.fill();
+  ctx.fillStyle=f.dead?'#678':'#05090c';ctx.beginPath();ctx.arc(ex+er*.1,-H*.1,er*.62,0,7);ctx.fill();
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(ex+er*.3,-H*.1-er*.25,er*.2,0,7);ctx.fill();
+  if(S.sel===f.id){ctx.strokeStyle='#ffb457';ctx.setLineDash([4,4]);ctx.lineWidth=1.5;ctx.beginPath();ctx.ellipse(0,0,L*.7,H*1.3,0,0,7);ctx.stroke()}
+  ctx.restore();
+}
+function render(rdt){
+  T+=rdt;const w=S.w,hour=S.t%24,lightOn=hour>=8&&hour<8+S.lightH;
+  S.lamp+=((lightOn?1:0)-S.lamp)*Math.min(1,rdt*1.2);
+  const lamp=S.lamp;
+  ctx.clearRect(0,0,W,H);
+  // Raum
+  let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#08141a');g.addColorStop(1,'#030709');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  // Wasser
+  const turb=clamp(w.TAN*.35+w.NO2*.12+S.mulm*.08,0,.4),algT=S.algae*.28;
+  g=ctx.createLinearGradient(0,WS,0,650);
+  g.addColorStop(0,`rgb(${52+lamp*28},${150+lamp*40},${160+lamp*40})`);g.addColorStop(.55,`rgb(${18+lamp*10},${72+lamp*30},${96+lamp*30})`);g.addColorStop(1,`rgb(${8+lamp*4},${34+lamp*14},${52+lamp*18})`);
+  ctx.fillStyle=g;ctx.fillRect(L0,WS,R0-L0,650-WS);
+  // Hintergrundbeleuchtung (Rueckwand-Verlauf)
+  const rg=ctx.createRadialGradient(600,250,50,600,300,700);rg.addColorStop(0,`rgba(180,240,240,${.16*lamp})`);rg.addColorStop(1,'rgba(0,0,0,.25)');ctx.fillStyle=rg;ctx.fillRect(L0,WS,R0-L0,650-WS);
+  ctx.save();ctx.beginPath();ctx.rect(L0,WS,R0-L0,650-WS);ctx.clip();
+  // Lichtstrahlen
+  ctx.globalCompositeOperation='lighter';
+  for(let i=0;i<8;i++){const x0=60+i*150+Math.sin(T*.25+i*1.7)*40,wd=50+25*Math.sin(T*.4+i);
+    const lg=ctx.createLinearGradient(x0,WS,x0-90,620);lg.addColorStop(0,`rgba(190,255,255,${.11*lamp})`);lg.addColorStop(1,'rgba(190,255,255,0)');ctx.fillStyle=lg;
+    ctx.beginPath();ctx.moveTo(x0,WS);ctx.lineTo(x0+wd,WS);ctx.lineTo(x0+wd-170,640);ctx.lineTo(x0-170,640);ctx.fill()}
+  ctx.globalCompositeOperation='source-over';
+  // Dekor hinten
+  plants.filter(p=>!p.front).forEach(drawPlant);
+  drawWood();rocks.forEach(drawRock);
+  plants.filter(p=>p.front&&p.type!=='vallis').forEach(drawPlant);
+  // Fische
+  S.fish.slice().sort((a,b)=>a.len-b.len).forEach(drawFish);
+  plants.filter(p=>p.front&&p.type==='vallis').forEach(drawPlant);
+  // Sand
+  ctx.beginPath();ctx.moveTo(L0,700);for(let x=L0;x<=R0;x+=8)ctx.lineTo(x,sandTop(x));ctx.lineTo(R0,700);ctx.closePath();
+  g=ctx.createLinearGradient(0,570,0,660);g.addColorStop(0,`rgb(${176*(.45+.55*lamp)|0},${150*(.45+.55*lamp)|0},${108*(.45+.55*lamp)|0})`);g.addColorStop(1,'#3a2e1e');ctx.fillStyle=g;ctx.fill();
+  ctx.save();ctx.clip();
+  for(let i=0;i<500;i++){const r2=rng(i*13+1),x=L0+r2()*(R0-L0),y=sandTop(x)+r2()*60;ctx.fillStyle=`rgba(${r2()<.5?240:90},${r2()<.5?210:70},${r2()<.5?160:50},${.15+r2()*.2})`;ctx.fillRect(x,y,2+r2()*2,1.5+r2()*1.5)}
+  ctx.globalCompositeOperation='lighter';
+  for(let i=0;i<22;i++){const x=L0+i*53+Math.sin(T*.8+i)*14,y=sandTop(x)+14+(i%3)*12+Math.sin(T*1.1+i*2)*3;ctx.fillStyle=`rgba(255,255,220,${.07*lamp})`;ctx.beginPath();ctx.ellipse(x,y,22,5,0,0,7);ctx.fill()}
+  ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle=`rgba(50,34,18,${clamp(S.mulm*.5,0,.6)})`;for(let i=0;i<30;i++){const r2=rng(i+99),x=L0+r2()*(R0-L0);ctx.beginPath();ctx.ellipse(x,sandTop(x)+3,12+r2()*20,3,0,0,7);ctx.fill()}
+  ctx.restore();
+  // Futter
+  S.food.forEach(p=>{ctx.fillStyle=p.sunk?'#9b6a2a':'#d9a24a';ctx.beginPath();ctx.ellipse(p.x,p.y,4,2.4,p.r,0,7);ctx.fill()});
+  // Partikel
+  motes.forEach(m=>{m.x+=Math.sin(T*.3+m.p)*.12;m.y+=Math.cos(T*.2+m.p)*.07;if(m.y>620)m.y=WS+30;ctx.fillStyle=`rgba(230,250,250,${.1+.12*lamp})`;ctx.fillRect(m.x,m.y,m.s*1.6,m.s*1.6)});
+  // Blasen
+  if(S.air&&Math.random()<rdt*14)bubbles.push({x:1085+rngf(-4,4),y:sandTop(1085)-4,r:1.5+Math.random()*3,p:Math.random()*6});
+  bubbles=bubbles.filter(b=>{b.y-=(60+b.r*14)*rdt;b.x+=Math.sin(T*5+b.p)*.4;
+    if(b.y<WS+4)return false;
+    ctx.strokeStyle='rgba(220,255,255,.7)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,7);ctx.stroke();ctx.fillStyle='rgba(255,255,255,.18)';ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,.8)';ctx.fillRect(b.x-b.r*.4,b.y-b.r*.5,1.4,1.4);return true});
+  ctx.fillStyle='#2b2f31';ctx.fillRect(1078,sandTop(1085)-3,14,6);
+  // Truebung
+  if(turb>0.01){ctx.fillStyle=`rgba(210,225,215,${turb*.55})`;ctx.fillRect(L0,WS,R0-L0,650-WS)}
+  if(algT>.01){ctx.fillStyle=`rgba(60,150,40,${algT*.35})`;ctx.fillRect(L0,WS,R0-L0,650-WS)}
+  // Wasseroberflaeche
+  ctx.fillStyle='rgba(255,255,255,.14)';ctx.beginPath();ctx.moveTo(L0,WS);for(let x=L0;x<=R0;x+=10)ctx.lineTo(x,WS+3+Math.sin(x*.03+T*1.4)*2+Math.sin(x*.07-T*2)*1.2);ctx.lineTo(R0,WS-4);ctx.lineTo(L0,WS-4);ctx.fill();
+  ctx.strokeStyle=`rgba(210,255,255,${.35+.35*lamp})`;ctx.lineWidth=1.5;ctx.beginPath();for(let x=L0;x<=R0;x+=10){const y=WS+Math.sin(x*.03+T*1.4)*2+Math.sin(x*.07-T*2)*1.2;x===L0?ctx.moveTo(x,y):ctx.lineTo(x,y)}ctx.stroke();
+  ctx.restore();
+  // Glas: Algenbelag
+  if(S.glass>.03){ctx.save();ctx.beginPath();ctx.rect(L0,WS,R0-L0,650-WS);ctx.clip();
+    glassSpots.forEach(s=>{if(s.r/12<S.glass*1.4+.1){ctx.fillStyle=`rgba(70,140,40,${S.glass*.5})`;ctx.beginPath();ctx.arc(s.x,s.y,s.r*(.4+S.glass),0,7);ctx.fill()}});
+    g=ctx.createLinearGradient(0,WS,0,650);g.addColorStop(0,'rgba(60,130,40,0)');g.addColorStop(1,`rgba(60,130,40,${S.glass*.5})`);ctx.fillStyle=g;ctx.fillRect(L0,WS,R0-L0,650-WS);ctx.restore()}
+  // Nacht
+  ctx.fillStyle=`rgba(2,6,22,${.6*(1-lamp)})`;ctx.fillRect(L0,WS,R0-L0,650-WS);
+  // Glasglanz
+  g=ctx.createLinearGradient(L0,0,R0,0);g.addColorStop(0,'rgba(255,255,255,.1)');g.addColorStop(.06,'rgba(255,255,255,0)');g.addColorStop(.9,'rgba(255,255,255,0)');g.addColorStop(1,'rgba(255,255,255,.07)');ctx.fillStyle=g;ctx.fillRect(L0,WS,R0-L0,650-WS);
+  // Rahmen, Abdeckung, Unterschrank
+  ctx.fillStyle='#0b0d0e';ctx.fillRect(0,0,W,WS-26);ctx.fillRect(0,0,L0,650);ctx.fillRect(R0,0,W-R0,650);ctx.fillRect(0,650,W,6);
+  ctx.fillStyle='#14181a';ctx.fillRect(L0-6,WS-26,R0-L0+12,26);
+  ctx.fillStyle=lamp>.1?`rgba(255,${190+lamp*40|0},${120+lamp*60|0},${.4+.6*lamp})`:'#222';ctx.fillRect(L0+60,WS-18,R0-L0-120,6);
+  if(lamp>.05){g=ctx.createLinearGradient(0,WS-12,0,WS+60);g.addColorStop(0,`rgba(255,220,160,${.25*lamp})`);g.addColorStop(1,'rgba(255,220,160,0)');ctx.fillStyle=g;ctx.fillRect(L0,WS-12,R0-L0,72)}
+  g=ctx.createLinearGradient(0,656,0,H);g.addColorStop(0,'#2a1b12');g.addColorStop(1,'#120a06');ctx.fillStyle=g;ctx.fillRect(0,656,W,H-656);
+  ctx.strokeStyle='rgba(255,255,255,.04)';for(let x=0;x<W;x+=90){ctx.beginPath();ctx.moveTo(x,656);ctx.lineTo(x+20,H);ctx.stroke()}
+}
+/* ---------- UI ---------- */
+const prm={};
+function buildUI(){
+  $('params').innerHTML='';
+  PARAMS.forEach(p=>{const r=document.createElement('div');r.className='p';
+    const pct=v=>clamp((v-p.a)/(p.b-p.a),0,1)*100;
+    r.innerHTML=`<span class="l">${p.l}</span><div class="bar"><i style="left:${pct(p.ok[0])}%;width:${pct(p.ok[1])-pct(p.ok[0])}%"></i><em></em></div><span class="v"></span>`;
+    $('params').appendChild(r);prm[p.k]={em:r.querySelector('em'),v:r.querySelector('.v'),bar:r.querySelector('.bar'),p}});
+  $('shop').innerHTML='';
+  Object.entries(SP).forEach(([k,s])=>{const b=document.createElement('button');b.innerHTML=`<b>${s.n}</b><small>${s.price} € · bis ${s.max} cm</small>`;b.title=s.lat+'. '+s.desc;
+    b.onclick=()=>{if(S.money<s.price){logm('Nicht genug Geld.','warn');return}
+      S.money-=s.price;addFish(k,false);logm(`${s.n} gekauft. Neue Fische sind anfangs gestresst und können Krankheiten einschleppen.`)};$('shop').appendChild(b)});
+}
+let lastUI=0,lastFl='';
+function updateUI(){
+  const w=S.w,v={...w,NH3:nh3free()};
+  PARAMS.forEach(p=>{const e=prm[p.k],val=v[p.k];e.v.textContent=fmt(val,p.d)+' '+p.u;
+    e.em.style.left=`calc(${clamp((val-p.a)/(p.b-p.a),0,1)*100}% - 1px)`;
+    const ok=val>=p.ok[0]&&val<=p.ok[1];e.v.style.color=ok?'var(--fg)':val<p.ok[0]||val>p.ok[1]?'var(--bad)':'var(--fg)'});
+  const al=alive();
+  $('sDay').textContent=stamp(S.t);$('sMoney').textContent=fmt(S.money,2)+' €';
+  const cm=al.reduce((a,f)=>a+f.len,0);$('sStock').textContent=fmt(cm,0)+' cm / 120 L';
+  const q=quality();$('sQual').textContent=q+' %';$('sQual').style.color=q>75?'var(--good)':q>45?'var(--warn)':'var(--bad)';
+  $('hV').textContent=fmt(S.setT,1)+' °C';$('lV').textContent=S.lightH+' h';
+  $('aAir').textContent=S.air?'Luftpumpe an':'Luftpumpe aus';$('aAir').className=S.air?'on':'';
+  $('aFil').textContent=S.filter?'Filter an':'Filter aus';$('aFil').className=S.filter?'on':'';
+  [...$('speed').children].forEach(b=>b.classList.toggle('on',+b.dataset.s===S.speed));
+  $('aMed').disabled=S.money<12;$('aKH').disabled=S.money<4;
+  // Fischliste
+  const key=S.fish.map(f=>f.id+f.dead+Math.round(f.health/5)+Math.round(f.hunger/8)+(S.sel===f.id)).join('|');
+  if(key!==lastFl){lastFl=key;$('fl').innerHTML='';
+    S.fish.forEach(f=>{const d=document.createElement('div');d.className='f'+(S.sel===f.id?' sel':'');
+      d.innerHTML=`<div>${SP[f.sp].n}${f.dead?' †':''}<br><small>${fmt(f.len,1)} cm · Hunger ${Math.round(f.hunger)} %</small></div><div class="hb"><i style="width:${f.health}%;background:${f.health>70?'var(--good)':f.health>35?'var(--warn)':'var(--bad)'}"></i></div>`;
+      d.onclick=()=>{S.sel=f.id;lastFl=''};$('fl').appendChild(d)})}
+  const f=S.fish.find(x=>x.id===S.sel);
+  if(f){const s=SP[f.sp];const bar=(l,val,inv)=>`<div class="mini"><span>${l}</span><div class="hb"><i style="width:${val}%;background:${(inv?100-val:val)>60?'var(--good)':(inv?100-val:val)>30?'var(--warn)':'var(--bad)'}"></i></div><span>${Math.round(val)}</span></div>`;
+    $('card').innerHTML=`<b>${s.n}</b> <small style="color:var(--mute)"><i>${s.lat}</i></small>${bar('Gesundheit',f.health)}${bar('Hunger',f.hunger,true)}${bar('Stress',f.stress,true)}
+    <div style="color:var(--mute)">Alter ${Math.round(f.age)} Tage · ${fmt(f.len,1)} cm · ${s.t[0]}–${s.t[1]} °C · pH ${fmt(s.ph[0],1)}–${fmt(s.ph[1],1)}</div>
+    <div style="color:var(--mute)">${s.desc}</div>
+    ${f.issues.length&&!f.dead?`<div style="color:var(--warn)">Probleme: ${f.issues.join(', ')}</div>`:''}
+    <div class="row">${f.dead?'<button id="cNet">Mit Kescher entfernen</button>':`<button id="cSell">Verkaufen (${fmt(sellPrice(f),2)} €)</button>`}</div>`;
+    const nb=$('cNet');if(nb)nb.onclick=()=>removeFish(f);const sb=$('cSell');if(sb)sb.onclick=()=>{S.money+=sellPrice(f);logm(`${s.n} verkauft.`);S.fish=S.fish.filter(x=>x!==f);S.sel=null;lastFl=''}}
+  else $('card').innerHTML='<span style="color:var(--mute)">Wähle einen Fisch in der Liste oder klicke im Becken auf ihn.</span>';
+  $('log').innerHTML=S.log.slice(0,30).map(l=>`<div class="${l.type}">${stamp(l.t)} ${l.m}</div>`).join('');
+  // Hinweis
+  const a=$('alert');const adv=advice();a.className='alert '+adv[0];a.textContent=adv[1];
+}
+const sellPrice=f=>SP[f.sp].price*.5*f.health/100*(.4+.6*f.len/f.max);
+function removeFish(f){S.fish=S.fish.filter(x=>x!==f);if(S.sel===f.id)S.sel=null;lastFl='';logm('Toten Fisch entfernt.','good')}
+function quality(){const w=S.w,n=nh3free();let q=100;
+  q-=clamp(n/.05,0,1)*35;q-=clamp(w.NO2/1,0,1)*25;q-=clamp((w.NO3-25)/60,0,1)*15;q-=clamp((6.5-w.O2)/3,0,1)*20;q-=w.cl>.02?20:0;q-=clamp(Math.abs(w.pH-7)/1.5,0,1)*8;q-=clamp((S.mulm-.5),0,1)*5;return Math.max(0,Math.round(q))}
+function advice(){
+  const w=S.w,al=alive(),nh3=nh3free();
+  if(S.over)return['bad','Alle Fische sind gestorben. Starte unten ein neues Aquarium.'];
+  if(al.some(f=>f.ich>0))return['bad','Weißpünktchenkrankheit: Heilmittel dosieren und Heizung auf 30 °C stellen.'];
+  if(nh3>.02)return['bad','Ammoniak ist giftig. Wasser wechseln und nicht füttern.'];
+  if(w.NO2>.5)return['bad','Nitrit zu hoch. Teilwasserwechsel, nur wenig füttern.'];
+  if(w.O2<5.5)return['warn','Sauerstoffmangel. Luftpumpe einschalten oder Temperatur senken.'];
+  if(w.cl>.02)return['bad','Chlor im Wasser. Beim Wasserwechsel Aufbereiter verwenden.'];
+  if(al.some(f=>f.hunger>60))return['warn','Mindestens ein Fisch hat Hunger.'];
+  if(S.mulm>.9)return['warn','Viel Mulm am Boden. Absaugen.'];
+  if(w.NO3>50)return['warn','Nitrat steigt. Wasser teilweise wechseln.'];
+  if(S.glass>.55)return['warn','Algen auf der Scheibe. Scheibe putzen.'];
+  if(al.some(f=>f.rot>0))return['warn','Flossenfäule. Wasser sauber halten, Heilmittel verwenden.'];
+  return['good','Alles im grünen Bereich. Beobachte die Fische und füttere nach Bedarf.'];
+}
+/* ---------- Aktionen ---------- */
+function feed(n){if(S.money<.2)return;S.money-=.2*n/4;
+  for(let i=0;i<n;i++)S.food.push({x:rngf(300,900),y:WS+8,vy:rngf(5,9),sunk:false,age:0,r:Math.random()*3});
+  logm(`${n} Flocken gefüttert. Was nach 7 Stunden am Boden liegt, fault.`)}
+function wc(p){const w=S.w,cond=$('cCond').checked,match=$('cTemp').checked,cost=cond?1+p*10:0;
+  if(S.money<cost){logm('Nicht genug Geld für Aufbereiter.','warn');return}S.money-=cost;
+  const tapT=match?w.temp:16,dT=Math.abs(w.temp-tapT)*p;
+  w.temp=w.temp*(1-p)+tapT*p;w.TAN*=1-p;w.NO2*=1-p;w.NO3=w.NO3*(1-p)+10*p;w.KH=w.KH*(1-p)+11*p;w.pH=w.pH*(1-p)+7.6*p;w.cl+=cond?0:.4*p;S.med*=1-p;
+  w.O2=Math.min(o2sat(w.temp),w.O2+(1-p)*0+p*2);
+  S.shock=Math.max(S.shock,dT*1.4);
+  logm(`${Math.round(p*100)} % Wasser gewechselt${cond?'':' ohne Aufbereiter'}${match?'':', kaltes Leitungswasser'}.`,cond?'':'warn');
+  if(!cond&&p>0)logm('Chlor im frischen Wasser schadet Fischen und Filterbakterien.','bad')}
+function act(){
+  $('aFeedS').onclick=()=>feed(4);$('aFeedN').onclick=()=>feed(9);
+  $('aWc10').onclick=()=>wc(.1);$('aWc25').onclick=()=>wc(.25);$('aWc50').onclick=()=>wc(.5);
+  $('aGlass').onclick=()=>{S.glass=0;logm('Scheibe geputzt.')};
+  $('aVac').onclick=()=>{S.mulm=0;S.food=S.food.filter(p=>!p.sunk);S.w.TAN*=.97;logm('Mulm abgesaugt.')};
+  $('aFilter').onclick=()=>{S.clog=0;S.b1*=.85;S.b2*=.85;logm('Filterschwamm in Aquarienwasser ausgespült. Etwa 15 % der Bakterien gehen verloren. Nie mit Leitungswasser ausspülen.')};
+  $('aTrim').onclick=()=>{S.plant=Math.max(.5,S.plant*.7);logm('Pflanzen gestutzt.')};
+  $('aMed').onclick=()=>{if(S.money<12)return;S.money-=12;S.med=1;S.b1*=.9;S.b2*=.9;logm('Heilmittel dosiert. Es belastet auch die Filterbakterien.')};
+  $('aKH').onclick=()=>{if(S.money<4)return;S.money-=4;S.w.KH+=2;logm('KH-Puffer eingerührt (+2 °dH).')};
+  $('hM').onclick=()=>S.setT=clamp(S.setT-.5,20,32);$('hP').onclick=()=>S.setT=clamp(S.setT+.5,20,32);
+  $('lM').onclick=()=>S.lightH=clamp(S.lightH-1,4,14);$('lP').onclick=()=>S.lightH=clamp(S.lightH+1,4,14);
+  $('aAir').onclick=()=>S.air=!S.air;$('aFil').onclick=()=>{S.filter=!S.filter;logm(S.filter?'Filter eingeschaltet.':'Filter ausgeschaltet. Die Bakterien darin ersticken.','warn')};
+  $('speed').onclick=e=>{const b=e.target.closest('button');if(b)S.speed=+b.dataset.s};
+  $('aNew').onclick=()=>{newGame();lastFl='';save()};
+  cv.addEventListener('click',e=>{const r=cv.getBoundingClientRect(),x=(e.clientX-r.left)*W/r.width,y=(e.clientY-r.top)*H/r.height;
+    let best=null,bd=1e9;S.fish.forEach(f=>{const d=Math.hypot(f.x-x,f.y-y)-f.len*PX*.3;if(d<bd){bd=d;best=f}});
+    if(best&&bd<40){if(best.dead){removeFish(best)}else{S.sel=best.id;lastFl=''}}
+    else if(y<WS+120&&x>L0&&x<R0){S.food.push({x,y:WS+8,vy:7,sunk:false,age:0,r:0});S.money-=.03}});
+}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function load(){try{const s=localStorage.getItem(KEY);if(s){const o=JSON.parse(s);if(o&&o.fish&&o.w&&o.w.O2!==undefined&&alive_ok(o)){S=o;return true}}}catch(e){}return false}
+function alive_ok(o){return o.fish.some(f=>!f.dead)}
+/* ---------- Hauptschleife ---------- */
+let last=performance.now(),acc=0,saveT=0;
+function frame(now){
+  const rdt=Math.min(.05,(now-last)/1000);last=now;
+  // Futter sinkt
+  S.food.forEach(p=>{if(!p.sunk){p.y+=p.vy*rdt;p.x+=Math.sin(T*2+p.r*5)*.15;if(p.y>=floorY(p.x)-3){p.y=floorY(p.x)-3;p.sunk=true}}});
+  const al=alive();
+  if(S.speed>0&&!S.over){
+    let dh=rdt*S.speed/5;while(dh>0){const h=Math.min(.1,dh);step(h);dh-=h}
+    dailyTick();warnings();
+    if(!al.length&&S.fish.length===0&&!S.over){}
+    if(!alive().length&&!S.over){S.over=true;logm('Alle Fische sind tot. Das Becken muss neu eingerichtet werden.','bad')}
+  }
+  const aa=alive();S.fish.forEach(f=>fishMove(f,rdt*(S.speed>0?1:0),aa));
+  render(S.speed>0?rdt:0);
+  if(now-lastUI>250){lastUI=now;updateUI()}
+  saveT+=rdt;if(saveT>8){saveT=0;save()}
+  requestAnimationFrame(frame);
+}
+if(!load())newGame();
+buildUI();act();
+requestAnimationFrame(frame);
+</script>
